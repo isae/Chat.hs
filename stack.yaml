@@ -27,3 +27,25 @@ flags: {}
 # Extra directories used by stack for building
 # extra-include-dirs: [/path/to/dir]
 # extra-lib-dirs: [/path/to/dir]
+nix:
+
+  # true by default when the nix section is present. Set
+  # it to `false` to disable using Nix.
+  enable: false
+
+  # true by default. Tells Nix whether to run in a pure shell or not.
+  pure: true
+
+  # Empty by default. The list of packages you want to be
+  # available in the nix-shell at build time (with `stack
+  # build`) and run time (with `stack exec`).
+  packages: [glpk, pcre]
+    
+  # A list of strings, empty by default. Additional options that
+  # will be passed verbatim to the `nix-shell` command.
+  nix-shell-options: []
+
+  # A list of strings, empty by default, such as
+  # `[nixpkgs=/my/local/nixpkgs/clone]` that will be used to override
+  # NIX_PATH.
+  path: []
