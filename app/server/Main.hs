@@ -17,12 +17,24 @@ import qualified Text.Blaze.Html5.Attributes as A
 import Text.Blaze.Html.Renderer.Text
 
 import Control.Monad.IO.Class  (liftIO)
+import Control.Monad
 import Database.Persist
 import qualified Database.Persist.Sqlite as DB
 import Database.Persist.TH
 import Data.Time.Clock
-import Data.Text.Lazy hiding (reverse)
+import Data.Text as T
+import Data.Text.Lazy as TL
 import Data.Int
+import Data.Hash.MD5
+import Network.HTTP.Types.Status
+import Data.Maybe
+import Network.Wai.Internal
+import Data.List as L
+import Data.List as L
+import qualified Data.ByteString.Char8 as BS
+import Data.ByteString.Base64
+import Network.HTTP.Types.Header
+import Data.Text.Encoding
 
 import qualified Database.Esqueleto      as E
 import           Database.Esqueleto      ((^.))
@@ -48,25 +60,44 @@ greet user = H.html $ do
     H.p ("Hello " >> H.toHtml user >> "!")
 
 app = do
-  W.get "/" $
-    W.text "Home Page"
+  W.get "/favicon.ico" $ W.html "ಠ_ಠ"
 
-  W.get "/greet/:name" $ do
-    name <- W.param "name"
-    W.html $ renderHtml (greet name)
+  W.get "/:some" $ do
+    r <- W.request
+    auth <- liftIO $ auth r
+    when auth W.next
+    liftIO $ print $ requestHeaders r
+    W.status status401
+    W.addHeader "WWW-Authenticate" "Basic realm=\"Incoming\""
+    W.html $ renderHtml $ H.html $ do H.h1 "Authentication required."
+
+  W.get "/" $
+    W.text "Hello!"
+
+  W.get "/greet" $ do
+    W.html $ renderHtml (greet "faggot")
 
   W.get "/add/:id/:text" $ do
-    liftIO $ putStrLn "Hello"
     userId :: Int <- W.param "id"
     msgText :: String <- W.param "text"
     liftIO $ addPost userId msgText
-    W.text $ pack $ "Post with text '" ++ msgText ++ "' added"
+    W.text $ TL.pack $ "Post with text '" ++ msgText ++ "' added"
 
   W.get "/getLast/:num" $ do
-    liftIO $ putStrLn "Hello2"
     numberOfPosts :: Int <- W.param "num"
     lastPosts <- liftIO $ getLastMessages numberOfPosts
-    W.text $ intercalate ";\n" lastPosts
+    W.text $ TL.intercalate ";\n" lastPosts
+
+auth :: Request -> IO (Bool)
+auth (Request {requestHeaders=h}) = do
+  let userAndPass = L.find (\(x,y) -> x == hAuthorization) h
+  case userAndPass of
+    Nothing -> return False
+    Just (hn, hv) -> do
+      let
+         decodedStr = decodeUtf8 $ decodeLenient $ L.head $ L.drop 1 $ BS.split ' ' hv
+         username:pass:xs = T.unpack <$> T.split (==':') decodedStr
+      verifyCredentials username pass
 
 addPost :: Int -> String -> IO(Key Post)
 addPost id msg = DB.runSqlite ":embedded:" $ do
@@ -76,11 +107,11 @@ addPost id msg = DB.runSqlite ":embedded:" $ do
   user <- DB.get userKey
   DB.insert $ Post msg (DB.toSqlKey userID) curTime
 
-getLastMessages :: Int -> IO([Text])
-{-getLastMessages no = DB.runSqlite ":embedded:" $ do-}
-  {-lastPosts <- selectList [] [Desc PostTime, LimitTo no]-}
-  {-liftIO $ print lastPosts-}
-  {-return $ reverse $ pack <$> show <$> postText <$> entityVal <$> lastPosts-}
+addUser :: String -> String -> IO(User)
+addUser login pass = DB.runSqlite ":embedded:" $ do
+  entity <- DB.insertEntity $ User login (uberHash pass)
+  return $ entityVal entity
+
 
 getLastMessages no = DB.runSqlite ":embedded:" $ do
   let numberOfPosts = fromIntegral(no) :: Int64
@@ -89,18 +120,28 @@ getLastMessages no = DB.runSqlite ":embedded:" $ do
              E.on $ post ^. PostAuthorId E.==. user ^. UserId
              E.orderBy [E.desc (post ^. PostTime)]
              E.limit numberOfPosts
-             return (user ^. UserId, user ^. UserLogin, post ^. PostText)
-  --liftIO $ print lastPosts
-  return $ reverse $ pack <$> show <$> lastPosts
+             return (user ^. UserId, user ^. UserLogin, user ^. UserPassword, post ^. PostText)
+  --liftIO $ priaunt lastPosts
+  return $ Prelude.reverse $ TL.pack <$> show <$> lastPosts
 
+verifyCredentials :: String -> String -> IO(Bool)
+verifyCredentials username expectedPass = DB.runSqlite ":embedded:" $ do
+  users <- selectList [UserLogin ==. username] [LimitTo 1]
+  let actualPass = userPassword $ entityVal (users !! 0)
+  return $
+    if (1 /= (Prelude.length users)) then False
+    else actualPass == (uberHash expectedPass)
 
+uberHash :: String -> String
+uberHash = md5s . Str
 
 main :: IO ()
 main = W.scotty 8000 app
+
 app2 :: IO()
 app2 = DB.runSqlite ":embedded:" $ do
     DB.runMigration migrateAll
-
+    someUser <- liftIO $ addUser "1" "2"
     johnId <- DB.insert $ User "John Doe" $ "somePass"
     janeId <- DB.insert $ User "Jane Doe" $ "somePass2"
     curTime <- liftIO $ getCurrentTime
@@ -113,7 +154,7 @@ app2 = DB.runSqlite ":embedded:" $ do
     john <- get johnId
     liftIO $ print (john :: Maybe User)
 
-    delete janeId
+    DB.delete janeId
     -- deleteWhere [PostAuthorId ==. johnId]
 
 
