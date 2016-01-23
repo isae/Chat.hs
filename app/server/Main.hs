@@ -64,8 +64,8 @@ app = do
 
   W.get "/:some" $ do
     r <- W.request
-    auth <- liftIO $ auth r
-    when auth W.next
+    authorized <- liftIO $ auth r
+    when authorized W.next
     liftIO $ print $ requestHeaders r
     W.status status401
     W.addHeader "WWW-Authenticate" "Basic realm=\"Incoming\""
