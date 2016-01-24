@@ -12,17 +12,16 @@ import System.Environment
 import System.Exit
 import System.IO
 import Data.Typeable
-import Utils
 import qualified Data.Map as Map
 
 main :: IO()
 main = do
   --Read saved notes
-  all <- NoteList []
-  listNote <- query all GetNotesList
+  {-all <- NoteList []-}
+  {-listNote <- query all GetNotesList-}
 
-  list2 <- listStoreNew []
-  mapM_ (\(Note r)-> listStoreAppend list2 r) listNote
+  list2 <- listStoreNew ["abc", "def"]
+  {-mapM_ (\(Note r)-> listStoreAppend list2 r) listNote-}
 
   initGUI
   window <- windowNew
@@ -75,7 +74,7 @@ main = do
     if (length curText /= 0)
       then do
         listStoreAppend list2 curText
-        update all (Insert curText)
+        --update all (Insert curText)
         entrySetText addEdt ""
       else
       return ()
@@ -87,7 +86,7 @@ main = do
       return ()
     else do
       let index = head (head selRows)
-      update all (DeleteByPosition index)
+      -- update all (DeleteByPosition index)
       listStoreRemove list2 index
       entrySetText editEdt ""
       return ()
@@ -110,7 +109,7 @@ main = do
       then
         buttonClicked delBtn
     else do
-      update all (Edit index curText)
+      -- update all (Edit index curText)
       listStoreSetValue list2 index curText
       entrySetText editEdt ""
 

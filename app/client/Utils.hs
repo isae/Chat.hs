@@ -5,17 +5,12 @@
 module Utils where
 
 import qualified Control.Monad.State as D
-import Graphics.UI.Gtk
-import Graphics.UI.Gtk.ModelView as Model
 import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad
-import Data.SafeCopy
-import Network
 import System.Environment
 import System.Exit
 import System.IO
-import Data.Typeable
 import qualified Data.Map as Map
 
 data Note = Note String deriving Typeable
