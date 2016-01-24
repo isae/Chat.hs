@@ -35,6 +35,8 @@ import qualified Data.ByteString.Char8 as BS
 import Data.ByteString.Base64
 import Network.HTTP.Types.Header
 import Data.Text.Encoding
+import Lib
+import Data.Aeson as JSON
 
 import qualified Database.Esqueleto      as E
 import           Database.Esqueleto      ((^.))
@@ -86,7 +88,7 @@ app = do
   W.get "/getLast/:num" $ do
     numberOfPosts :: Int <- W.param "num"
     lastPosts <- liftIO $ getLastMessages numberOfPosts
-    W.text $ TL.intercalate ";\n" lastPosts
+    W.json lastPosts
 
 auth :: Request -> IO (Bool)
 auth (Request {requestHeaders=h}) = do
@@ -112,7 +114,7 @@ addUser login pass = DB.runSqlite ":embedded:" $ do
   entity <- DB.insertEntity $ User login (uberHash pass)
   return $ entityVal entity
 
-
+getLastMessages :: Int -> IO([ChatMessage])
 getLastMessages no = DB.runSqlite ":embedded:" $ do
   let numberOfPosts = fromIntegral(no) :: Int64
   lastPosts <- E.select
@@ -120,9 +122,9 @@ getLastMessages no = DB.runSqlite ":embedded:" $ do
              E.on $ post ^. PostAuthorId E.==. user ^. UserId
              E.orderBy [E.desc (post ^. PostTime)]
              E.limit numberOfPosts
-             return (user ^. UserId, user ^. UserLogin, user ^. UserPassword, post ^. PostText)
-  --liftIO $ priaunt lastPosts
-  return $ Prelude.reverse $ TL.pack <$> show <$> lastPosts
+             return (user ^. UserLogin, post ^. PostText, post ^. PostTime)
+  let toMsg (login, msg, time) = ChatMessage (E.unValue login) (E.unValue msg) (E.unValue time)
+  return $ L.reverse $ toMsg <$> lastPosts
 
 verifyCredentials :: String -> String -> IO(Bool)
 verifyCredentials username expectedPass = DB.runSqlite ":embedded:" $ do
@@ -136,7 +138,7 @@ uberHash :: String -> String
 uberHash = md5s . Str
 
 main :: IO ()
-main = W.scotty 8000 app
+main = W.scotty serverPort app
 
 app2 :: IO()
 app2 = DB.runSqlite ":embedded:" $ do

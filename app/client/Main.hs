@@ -6,13 +6,24 @@ import Graphics.UI.Gtk.ModelView as Model
 import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad
-import Data.SafeCopy
 import Network
 import System.Environment
 import System.Exit
 import System.IO
 import Data.Typeable
+import Lib
 import qualified Data.Map as Map
+
+import Network.HTTP.Conduit -- the main module
+
+-- The streaming interface uses conduits
+import Data.Conduit
+import Data.Conduit.Binary (sinkFile)
+
+import qualified Data.ByteString.Lazy as L
+import Data.ByteString.Lazy.Char8 hiding (length, head, null)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.Resource (runResourceT)
 
 main :: IO()
 main = do
@@ -20,6 +31,9 @@ main = do
   {-all <- NoteList []-}
   {-listNote <- query all GetNotesList-}
 
+  str <- simpleHttp $ serverUrl ++ "getLast/5"
+  print str
+ -- >>= L.writeFile "foo.txt"
   list2 <- listStoreNew ["abc", "def"]
   {-mapM_ (\(Note r)-> listStoreAppend list2 r) listNote-}
 
@@ -88,7 +102,7 @@ main = do
       let index = head (head selRows)
       -- update all (DeleteByPosition index)
       listStoreRemove list2 index
-      entrySetText editEdt ""
+      entrySetText editEdt (""::String)
       return ()
 
   on selection treeSelectionSelectionChanged $ do
