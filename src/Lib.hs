@@ -4,11 +4,14 @@ module Lib
     (
       serverPort,
       serverUrl,
-      ChatMessage(..)
+      ChatMessage(..),
+      utcStart,
+      uberHash
     ) where
 
 import Data.Time.Clock
 import Data.Aeson
+import Data.Hash.MD5
 
 serverPort :: Int
 serverPort = 8000
@@ -38,5 +41,11 @@ instance ToJSON ChatMessage where
     "message"  .= message p,
     "time"  .= time p
     ]
+
+utcStart :: UTCTime
+utcStart = read "1970-01-01 01:01:01.00001 UTC"
+
+uberHash :: String -> String
+uberHash = md5s . Str
 
 

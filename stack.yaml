@@ -7,5 +7,8 @@ nix:
   pure: true
 packages:
 - '.'
-extra-deps: []
+extra-deps: 
+- aeson-extra-0.3.0.0
+- aeson-compat-0.3.0.0
+- time-parsers-0.1.0.0
 resolver: lts-3.1

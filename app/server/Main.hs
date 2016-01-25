@@ -32,11 +32,13 @@ import Network.Wai.Internal
 import Data.List as L
 import Data.List as L
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString.Base64
 import Network.HTTP.Types.Header
 import Data.Text.Encoding
 import Lib
 import Data.Aeson as JSON
+import Data.Aeson.Extra as JsonExtra
 
 import qualified Database.Esqueleto      as E
 import           Database.Esqueleto      ((^.))
@@ -53,14 +55,6 @@ Post
     deriving Show
 |]
 
-greet :: String -> H.Html
-greet user = H.html $ do
-  H.head $
-    H.title "Welcome!"
-  H.body $ do
-    H.h1 "Greetings!"
-    H.p ("Hello " >> H.toHtml user >> "!")
-
 app = do
   W.get "/favicon.ico" $ W.html "ಠ_ಠ"
 
@@ -71,24 +65,37 @@ app = do
     liftIO $ print $ requestHeaders r
     W.status status401
     W.addHeader "WWW-Authenticate" "Basic realm=\"Incoming\""
-    W.html $ renderHtml $ H.html $ do H.h1 "Authentication required."
+    W.html $ renderHtml $ H.html $ do H.h2 "Authentication required."
 
-  W.get "/" $
-    W.text "Hello!"
-
-  W.get "/greet" $ do
-    W.html $ renderHtml (greet "faggot")
-
-  W.get "/add/:id/:text" $ do
+  W.get "/sendMessage/:id/:text" $ do
     userId :: Int <- W.param "id"
     msgText :: String <- W.param "text"
     liftIO $ addPost userId msgText
     W.text $ TL.pack $ "Post with text '" ++ msgText ++ "' added"
 
+  W.get "/addUser/:login/:pass" $ do
+    login :: String <- W.param "login"
+    pass :: String <- W.param "pass"
+    key <- liftIO $ addUser login pass
+    W.text $ TL.pack $ show $ DB.fromSqlKey key
+
+  W.get "/checkCreds/:login/:pass" $ do
+    login :: String <- W.param "login"
+    pass :: String <- W.param "pass"
+    res <- liftIO $ verifyCredentials login pass
+    liftIO $ print res
+    W.text $ TL.pack $ show $ res
+
   W.get "/getLast/:num" $ do
     numberOfPosts :: Int <- W.param "num"
     lastPosts <- liftIO $ getLastMessages numberOfPosts
     W.json lastPosts
+
+  W.get "/getSince/:time" $ do
+      timeStr :: T.Text <- W.param "time"
+      let time :: Maybe UTCTime = JsonExtra.decode $ BSL.fromStrict $ encodeUtf8 $ timeStr
+      lastPosts <- liftIO $ getMessagesSince (fromJust time)
+      W.json lastPosts
 
 auth :: Request -> IO (Bool)
 auth (Request {requestHeaders=h}) = do
@@ -99,7 +106,8 @@ auth (Request {requestHeaders=h}) = do
       let
          decodedStr = decodeUtf8 $ decodeLenient $ L.head $ L.drop 1 $ BS.split ' ' hv
          username:pass:xs = T.unpack <$> T.split (==':') decodedStr
-      verifyCredentials username pass
+      usr <- verifyCredentials username pass
+      return $ isJust usr
 
 addPost :: Int -> String -> IO(Key Post)
 addPost id msg = DB.runSqlite ":embedded:" $ do
@@ -109,10 +117,10 @@ addPost id msg = DB.runSqlite ":embedded:" $ do
   user <- DB.get userKey
   DB.insert $ Post msg (DB.toSqlKey userID) curTime
 
-addUser :: String -> String -> IO(User)
+addUser :: String -> String -> IO(Key User)
 addUser login pass = DB.runSqlite ":embedded:" $ do
-  entity <- DB.insertEntity $ User login (uberHash pass)
-  return $ entityVal entity
+  entity <- DB.insert $ User login (uberHash pass)
+  return entity
 
 getLastMessages :: Int -> IO([ChatMessage])
 getLastMessages no = DB.runSqlite ":embedded:" $ do
@@ -124,18 +132,35 @@ getLastMessages no = DB.runSqlite ":embedded:" $ do
              E.limit numberOfPosts
              return (user ^. UserLogin, post ^. PostText, post ^. PostTime)
   let toMsg (login, msg, time) = ChatMessage (E.unValue login) (E.unValue msg) (E.unValue time)
-  return $ L.reverse $ toMsg <$> lastPosts
+  return $ toMsg <$> lastPosts
 
-verifyCredentials :: String -> String -> IO(Bool)
+getMessagesSince :: UTCTime -> IO([ChatMessage])
+getMessagesSince sinceTime = DB.runSqlite ":embedded:" $ do
+  liftIO $ print $ "Requested time" ++ (show sinceTime)
+  let oneSecond = secondsToDiffTime 1
+      oneSecondDiff :: NominalDiffTime = fromRational $ toRational $ oneSecond
+      realSinceTime = addUTCTime oneSecondDiff sinceTime
+  lastPosts <- E.select
+           $ E.from $ \(post `E.InnerJoin` user) -> do
+             E.where_ (post ^. PostTime E.>. E.val realSinceTime)
+             E.on $ post ^. PostAuthorId E.==. user ^. UserId
+             E.orderBy [E.desc (post ^. PostTime)]
+             return (user ^. UserLogin, post ^. PostText, post ^. PostTime)
+  let toMsg (login, msg, time) = ChatMessage (E.unValue login) (E.unValue msg) (E.unValue time)
+      result = toMsg <$> lastPosts
+  liftIO $ print sinceTime
+  liftIO $ print $ show $ time <$> result
+  return result
+
+
+verifyCredentials :: String -> String -> IO(Maybe Int64)
 verifyCredentials username expectedPass = DB.runSqlite ":embedded:" $ do
-  users <- selectList [UserLogin ==. username] [LimitTo 1]
+  userKeys <- selectKeysList [UserLogin ==. username] [LimitTo 1]
+  users <-  selectList [UserLogin ==. username] [LimitTo 1]
   let actualPass = userPassword $ entityVal (users !! 0)
   return $
-    if (1 /= (Prelude.length users)) then False
-    else actualPass == (uberHash expectedPass)
-
-uberHash :: String -> String
-uberHash = md5s . Str
+    if (1 /= (Prelude.length users)) then Nothing
+    else if (actualPass == (uberHash expectedPass)) then Just (DB.fromSqlKey (userKeys !! 0)) else Nothing
 
 main :: IO ()
 main = W.scotty serverPort app
@@ -159,5 +184,3 @@ app2 = DB.runSqlite ":embedded:" $ do
     DB.delete janeId
     -- deleteWhere [PostAuthorId ==. johnId]
 
-
-abc = 5
