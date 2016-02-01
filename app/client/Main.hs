@@ -23,9 +23,8 @@ import Data.Aeson.Extra as JsonExtra
 import Data.Maybe (isJust, fromJust)
 import Text.Read (readMaybe)
 
-import Network.HTTP.Conduit -- the main module
+import Network.HTTP.Conduit
 
--- The streaming interface uses conduits
 import Data.Conduit
 import Data.Conduit.Binary (sinkFile)
 
@@ -39,15 +38,12 @@ import Data.IORef
 data ChatStatus = Unregistered | Ok deriving (Show, Eq)
 
 prettyPrint :: ChatMessage -> String
-prettyPrint msg  = (username msg) ++ (" wrote: "::String) ++ (message msg) ++ (show $ time msg) -- todo replace with lenses maybe
+prettyPrint msg  = (username msg) ++ (" wrote: "::String) ++ (message msg)
 
 updateList :: IORef UTCTime -> ListStore String -> IO()
 updateList tm list = do
   lastTime <- readIORef tm
-  print $ JSON.encode lastTime
-  System.IO.putStrLn $ "Encoded version: " ++ (unpack $ JSON.encode lastTime)
   let url = serverUrl ++ ("getSince/"::String) ++ (unpack $ JSON.encode lastTime)
-  print url
   ans <- simpleHttp $ url
   let messages =  JSON.decode ans :: Maybe [ChatMessage]
   when (isJust messages && length (fromJust messages) > 1) ( do
@@ -62,19 +58,14 @@ updateList tm list = do
 main :: IO ()
 main = do
   --Read saved notes
+  currentTime <- getCurrentTime
   curStatus <- newIORef Unregistered
-  lastTime <- newIORef utcStart
   userIDRef <- newIORef Nothing
   list2 <- listStoreNew ["Please, register or sign in to join chat"]
-  ans <- simpleHttp $ serverUrl ++ ("getLast/5"::String)
-  let messages =  JSON.decode ans :: Maybe [ChatMessage]
-  when (isJust messages) ( do
-      let jm = fromJust messages
-      lastTtm <- newIORef $ time $ (head jm)
-      let strings = Prelude.map prettyPrint $ jm
-      mapM_ (listStoreAppend list2) strings
-      return ()
-    )
+  let twoHours = secondsToDiffTime 7200
+      twoHoursDiff :: NominalDiffTime = fromRational $ - (toRational twoHours)
+  lastTime <- newIORef $ addUTCTime twoHoursDiff currentTime
+
   initGUI
   window <- windowNew
   set window [windowTitle := ("Chat client"::String), windowDefaultWidth := 500, windowDefaultHeight := 400]
@@ -92,6 +83,7 @@ main = do
   boxPackStart usernameBox usernameEdt PackGrow 0
   boxPackStart usernameBox registerBtn PackNatural 0
 
+  -- paswordBox
   passwordLbl <- labelNew(Just ("Password"::String))
   passwordBox <- hBoxNew False 1
   passwordEdt <- entryNew
@@ -130,7 +122,6 @@ main = do
   boxPackStart mainBox treeview PackGrow 0
   boxPackStart mainBox addBox PackNatural 0
   set window [windowTitle := ("Chat"::String), windowDefaultWidth := 350, windowDefaultHeight := 800, containerBorderWidth := 30]
-  --S.execStateT (addButtonHandlers addBtn addEdt list2) initialState
   on addBtn buttonActivated $ do
     status <- readIORef curStatus
     curText :: String <- entryGetText addEdt
@@ -142,7 +133,6 @@ main = do
         if (length curText /= 0)
           then do
             curTime <- readIORef lastTime
-            liftIO $ print curTime
             user <- readIORef userIDRef
             let userID = fromJust user
             simpleHttp $ serverUrl ++ ("sendMessage/"::String) ++ (show userID) ++ "/" ++ curText

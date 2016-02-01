@@ -17,7 +17,7 @@ serverPort :: Int
 serverPort = 8000
 
 serverUrl :: String
-serverUrl = "http://localhost:" ++ (show serverPort) ++ "/"
+serverUrl = "http://localhost:" ++ show serverPort ++ "/"
 
 data ChatMessage = ChatMessage {
   -- userID :: Int,

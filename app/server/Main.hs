@@ -83,7 +83,6 @@ app = do
     login :: String <- W.param "login"
     pass :: String <- W.param "pass"
     res <- liftIO $ verifyCredentials login pass
-    liftIO $ print res
     W.text $ TL.pack $ show $ res
 
   W.get "/getLast/:num" $ do
@@ -124,7 +123,7 @@ addUser login pass = DB.runSqlite ":embedded:" $ do
 
 getLastMessages :: Int -> IO([ChatMessage])
 getLastMessages no = DB.runSqlite ":embedded:" $ do
-  let numberOfPosts = fromIntegral(no) :: Int64
+  let numberOfPosts = fromIntegral no :: Int64
   lastPosts <- E.select
            $ E.from $ \(post `E.InnerJoin` user) -> do
              E.on $ post ^. PostAuthorId E.==. user ^. UserId
@@ -134,9 +133,8 @@ getLastMessages no = DB.runSqlite ":embedded:" $ do
   let toMsg (login, msg, time) = ChatMessage (E.unValue login) (E.unValue msg) (E.unValue time)
   return $ toMsg <$> lastPosts
 
-getMessagesSince :: UTCTime -> IO([ChatMessage])
+getMessagesSince :: UTCTime -> IO[ChatMessage]
 getMessagesSince sinceTime = DB.runSqlite ":embedded:" $ do
-  liftIO $ print $ "Requested time" ++ (show sinceTime)
   let oneSecond = secondsToDiffTime 1
       oneSecondDiff :: NominalDiffTime = fromRational $ toRational $ oneSecond
       realSinceTime = addUTCTime oneSecondDiff sinceTime
@@ -148,8 +146,6 @@ getMessagesSince sinceTime = DB.runSqlite ":embedded:" $ do
              return (user ^. UserLogin, post ^. PostText, post ^. PostTime)
   let toMsg (login, msg, time) = ChatMessage (E.unValue login) (E.unValue msg) (E.unValue time)
       result = toMsg <$> lastPosts
-  liftIO $ print sinceTime
-  liftIO $ print $ show $ time <$> result
   return result
 
 
@@ -157,30 +153,10 @@ verifyCredentials :: String -> String -> IO(Maybe Int64)
 verifyCredentials username expectedPass = DB.runSqlite ":embedded:" $ do
   userKeys <- selectKeysList [UserLogin ==. username] [LimitTo 1]
   users <-  selectList [UserLogin ==. username] [LimitTo 1]
-  let actualPass = userPassword $ entityVal (users !! 0)
+  let actualPass = userPassword $ entityVal (L.head users)
   return $
-    if (1 /= (Prelude.length users)) then Nothing
-    else if (actualPass == (uberHash expectedPass)) then Just (DB.fromSqlKey (userKeys !! 0)) else Nothing
+    if (1 /= Prelude.length users) then Nothing
+    else if actualPass == uberHash expectedPass then Just (DB.fromSqlKey (L.head userKeys)) else Nothing
 
 main :: IO ()
 main = W.scotty serverPort app
-
-app2 :: IO()
-app2 = DB.runSqlite ":embedded:" $ do
-    DB.runMigration migrateAll
-    someUser <- liftIO $ addUser "1" "2"
-    johnId <- DB.insert $ User "John Doe" $ "somePass"
-    janeId <- DB.insert $ User "Jane Doe" $ "somePass2"
-    curTime <- liftIO $ getCurrentTime
-    DB.insert $ Post "My fr1st p0st" johnId curTime
-    DB.insert $ Post "One more for good measure" johnId curTime
-
-    oneJohnPost <- selectList [PostAuthorId ==. johnId] [LimitTo 1]
-    liftIO $ print (oneJohnPost :: [Entity Post])
-
-    john <- get johnId
-    liftIO $ print (john :: Maybe User)
-
-    DB.delete janeId
-    -- deleteWhere [PostAuthorId ==. johnId]
-
